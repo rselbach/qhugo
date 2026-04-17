@@ -6,6 +6,7 @@ package main
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -21,6 +22,135 @@ import (
 
 	"golang.org/x/image/draw"
 )
+
+// Config represents the qhugo configuration file
+type Config struct {
+	Sites   []string `json:"sites"`
+	Current string   `json:"current"`
+}
+
+// getConfigDir returns the path to the qhugo config directory
+func getConfigDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "qhugo")
+}
+
+// getConfigPath returns the full path to the config file
+func getConfigPath() string {
+	return filepath.Join(getConfigDir(), "config.json")
+}
+
+// ensureConfigDir creates the config directory if it doesn't exist
+func ensureConfigDir() error {
+	configDir := getConfigDir()
+	return os.MkdirAll(configDir, 0755)
+}
+
+// LoadConfig loads the configuration from the config file
+func LoadConfig() (*Config, error) {
+	configPath := getConfigPath()
+
+	// If config file doesn't exist, return empty config
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return &Config{
+			Sites:   []string{},
+			Current: "",
+		}, nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// SaveConfig saves the configuration to the config file
+func SaveConfig(config *Config) error {
+	if err := ensureConfigDir(); err != nil {
+		return err
+	}
+
+	configPath := getConfigPath()
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, data, 0644)
+}
+
+//export GetConfigDir
+func GetConfigDir() *C.char {
+	return C.CString(getConfigDir())
+}
+
+//export LoadConfigCurrent
+func LoadConfigCurrent() *C.char {
+	config, err := LoadConfig()
+	if err != nil {
+		return C.CString("")
+	}
+	return C.CString(config.Current)
+}
+
+//export LoadConfigSites
+func LoadConfigSites() *C.char {
+	config, err := LoadConfig()
+	if err != nil {
+		return C.CString("")
+	}
+
+	data, err := json.Marshal(config.Sites)
+	if err != nil {
+		return C.CString("")
+	}
+	return C.CString(string(data))
+}
+
+//export AddSiteAndSetCurrent
+func AddSiteAndSetCurrent(sitePath *C.char) int {
+	site := C.GoString(sitePath)
+
+	config, err := LoadConfig()
+	if err != nil {
+		config = &Config{
+			Sites:   []string{},
+			Current: "",
+		}
+	}
+
+	// Check if site already exists in the list
+	exists := false
+	for _, s := range config.Sites {
+		if s == site {
+			exists = true
+			break
+		}
+	}
+
+	// Add to sites list if not exists
+	if !exists {
+		config.Sites = append(config.Sites, site)
+	}
+
+	// Set as current
+	config.Current = site
+
+	if err := SaveConfig(config); err != nil {
+		return 0
+	}
+	return 1
+}
 
 var hugoCmd *exec.Cmd
 
@@ -69,7 +199,9 @@ func getFreePort() (int, error) {
 func StartHugo(repoC *C.char) int {
 	repo := C.GoString(repoC)
 	if hugoCmd != nil && hugoCmd.Process != nil {
+		log.Println("Killing existing Hugo server")
 		hugoCmd.Process.Kill()
+		hugoCmd = nil
 	}
 
 	port, err := getFreePort()
@@ -78,10 +210,29 @@ func StartHugo(repoC *C.char) int {
 		port = 1313
 	}
 
-	// Launch hugo in background
-	hugoCmd = exec.Command("hugo", "server", "-s", repo, "-p", fmt.Sprintf("%d", port), "-D")
-	hugoCmd.Start()
+	log.Printf("Starting Hugo server in %s on port %d", repo, port)
 
+	// Launch hugo in background with live reload enabled (default)
+	// --bind 127.0.0.1 ensures it binds to localhost
+	// -D includes drafts
+	hugoCmd = exec.Command("hugo", "server",
+		"-s", repo,
+		"-p", fmt.Sprintf("%d", port),
+		"-D",
+		"--bind", "127.0.0.1",
+		"--noHTTPCache", // Prevent HTTP caching issues
+	)
+
+	// Capture output for debugging
+	hugoCmd.Stdout = os.Stdout
+	hugoCmd.Stderr = os.Stderr
+
+	if err := hugoCmd.Start(); err != nil {
+		log.Println("Error starting Hugo:", err)
+		return 0
+	}
+
+	log.Printf("Hugo server started with PID %d on port %d", hugoCmd.Process.Pid, port)
 	return port
 }
 

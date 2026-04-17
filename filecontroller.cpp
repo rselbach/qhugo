@@ -1,10 +1,11 @@
 #include "filecontroller.h"
-#include "backend.h" 
+#include "backend.h"
 #include <QDirIterator>
 #include <QUrl>
 #include <QDebug>
 #include <QDateTime>
 #include <QRegularExpression>
+#include <QStandardPaths>
 
 FileController::FileController(QObject *parent) : QObject(parent) {
     InitBackend(); // Initialize Go runtime
@@ -121,20 +122,69 @@ QString FileController::createPost(const QString &repoPath, const QString &title
     if (repoPath.startsWith("file://")) {
         localRepo = QUrl(repoPath).toLocalFile();
     }
-    
+
     QString slug = title.toLower().replace(QRegularExpression("[^a-z0-9]+"), "-");
     QString year = QDateTime::currentDateTime().toString("yyyy");
-    
+
     QString contentDir = localRepo + "/content/post/" + year;
     QString contentPath = contentDir + "/" + slug + ".md";
-    
+
     QString frontmatter = "---\n";
     frontmatter += "title: \"" + title + "\"\n";
     frontmatter += "date: " + QDateTime::currentDateTime().toString(Qt::ISODate) + "\n";
     frontmatter += "draft: true\n";
     frontmatter += "---\n\n";
-    
+
     QDir().mkpath(contentDir);
     saveFile(contentPath, frontmatter);
     return contentPath;
+}
+
+QString FileController::loadConfigCurrent() {
+    char* result = LoadConfigCurrent();
+    QString qResult = QString::fromUtf8(result);
+    FreeString(result);
+    return qResult;
+}
+
+QStringList FileController::loadConfigSites() {
+    char* result = LoadConfigSites();
+    QString qResult = QString::fromUtf8(result);
+    FreeString(result);
+
+    QStringList sites;
+    if (!qResult.isEmpty()) {
+        // Parse JSON array
+        QString trimmed = qResult.trimmed();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            trimmed = trimmed.mid(1, trimmed.length() - 2);
+            // Split by commas, handling quoted strings
+            QRegularExpression re("\\s*,\\s*");
+            QStringList parts = trimmed.split(re);
+            for (QString part : parts) {
+                part = part.trimmed();
+                // Remove quotes
+                if ((part.startsWith("\"") && part.endsWith("\"")) ||
+                    (part.startsWith("'") && part.endsWith("'"))) {
+                    part = part.mid(1, part.length() - 2);
+                }
+                if (!part.isEmpty()) {
+                    sites.append(part);
+                }
+            }
+        }
+    }
+    return sites;
+}
+
+bool FileController::addSiteAndSetCurrent(const QString &sitePath) {
+    QString localPath = sitePath;
+    if (sitePath.startsWith("file://")) {
+        localPath = QUrl(sitePath).toLocalFile();
+    }
+    return AddSiteAndSetCurrent(localPath.toUtf8().data()) == 1;
+}
+
+QString FileController::getDocumentsLocation() {
+    return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
 }

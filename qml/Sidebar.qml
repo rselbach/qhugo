@@ -6,10 +6,16 @@ import Qt.labs.folderlistmodel 2.15
 Item {
     id: root
     property string currentDirectory
-    
+    property string rootDirectory  // Hugo root - can't go above this
+
     signal fileSelected(string path)
     signal directorySelected(string path)
-    signal goUpClicked() 
+    signal goUpClicked()
+
+    // Check if we're at the root directory
+    readonly property bool atRoot: currentDirectory === rootDirectory ||
+                                    currentDirectory === "" ||
+                                    rootDirectory === ""
 
     ColumnLayout {
         anchors.fill: parent
@@ -24,22 +30,19 @@ Item {
                 anchors.fill: parent
                 anchors.margins: 5
                 
-                Button {
-                    id: goUpBtn
-                    icon.name: "go-up"
-                    text: ".."
-                    Layout.preferredWidth: 40
-                    Layout.fillHeight: true
-                    display: AbstractButton.IconOnly 
-                    onClicked: root.goUpClicked()
-                    
-                    // FIX: Use explicit ToolTip object to avoid Breeze binding loops
-                    ToolTip {
-                        parent: goUpBtn
-                        visible: goUpBtn.hovered
-                        text: "Up one level"
-                    }
-                }
+        Button {
+            id: goUpBtn
+            icon.name: "go-up"
+            text: ".."
+            Layout.preferredWidth: 40
+            Layout.fillHeight: true
+            display: AbstractButton.IconOnly
+            enabled: !root.atRoot
+            opacity: enabled ? 1.0 : 0.5
+            onClicked: root.goUpClicked()
+            ToolTip.text: "Up one level"
+            ToolTip.visible: hovered
+        }
 
                 Label {
                     text: "Files"

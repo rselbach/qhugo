@@ -15,6 +15,16 @@ Item {
         onActivated: closeTab(tabBar.currentIndex)
     }
 
+    Shortcut {
+        sequences: [StandardKey.Save]
+        onActivated: root.saveCurrentTab()
+    }
+
+    Shortcut {
+        sequence: "Meta+S"
+        onActivated: root.saveCurrentTab()
+    }
+
     function openFile(path) {
         var cleanPath = path.toString().replace("file://", "")
         
@@ -35,6 +45,17 @@ Item {
         tabModel.remove(index);
         if (tabBar.currentIndex >= tabModel.count) {
             tabBar.currentIndex = tabModel.count - 1;
+        }
+    }
+
+    function saveCurrentTab() {
+        if (tabBar.currentIndex >= 0 && tabBar.currentIndex < tabModel.count) {
+            var currentItem = stackLayout.children[tabBar.currentIndex]
+            if (currentItem && currentItem.editor) {
+                var currentTab = tabModel.get(tabBar.currentIndex)
+                FileController.saveFile(currentTab.filePath, currentItem.editor.text)
+                root.contentSaved()
+            }
         }
     }
 
@@ -83,6 +104,7 @@ Item {
         }
 
         StackLayout {
+            id: stackLayout
             currentIndex: tabBar.currentIndex
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -93,6 +115,7 @@ Item {
                 Item {
                     id: tabItem
                     property string path: filePath
+                    property var editor: textArea
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -103,10 +126,7 @@ Item {
                             Layout.margins: 5
                             Button {
                                 text: "Save"
-                                onClicked: {
-                                    FileController.saveFile(path, textArea.text)
-                                    root.contentSaved()
-                                }
+                                onClicked: root.saveCurrentTab()
                             }
                             Item { Layout.fillWidth: true }
                         }
@@ -119,8 +139,8 @@ Item {
                             clip: true
 
                             Row {
-                                width: scrollView.availableWidth 
-                                
+                                width: scrollView.availableWidth
+
                                 Column {
                                     id: lineNumbers
                                     width: 40
@@ -141,49 +161,74 @@ Item {
                                 TextArea {
                                     id: textArea
                                     width: parent.width - lineNumbers.width
-                                    text: fileContent 
+                                    text: fileContent
                                     textFormat: TextEdit.PlainText
-                                    
+
                                     font.family: "Courier New"
                                     font.pixelSize: 14
                                     padding: 0
                                     leftPadding: 5
-                                    
+
                                     wrapMode: TextEdit.Wrap
                                     selectByMouse: true
-                                    
+
                                     background: Rectangle {
                                         color: "transparent"
                                         border.width: 0
                                     }
-                                    
+
                                     color: Qt.application.styleHints.colorScheme === Qt.Dark ? "white" : "black"
 
                                     MarkdownHighlighter {
                                         id: highlighter
                                         document: textArea.textDocument
                                     }
+                                }
+                            }
 
-                                    // Catch Image Drag and Drop
-                                    DropArea {
-                                        anchors.fill: parent
-                                        keys: ["text/uri-list"]
-                                        onDropped: function(drop) {
-                                            if (drop.hasUrls) {
-                                                for (var i = 0; i < drop.urls.length; i++) {
-                                                    var url = drop.urls[i].toString()
-                                                    if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
-                                                        var link = FileController.processImage(url, root.repoPath, tabItem.path)
-                                                        if (!link.startsWith("Error")) {
-                                                            textArea.insert(textArea.cursorPosition, link + "\n")
-                                                        } else {
-                                                            console.error("Image processing error:", link)
-                                                        }
-                                                    }
-                                                }
-                                                drop.accept()
+                            // Catch Image Drag and Drop - placed as sibling to content to avoid event conflicts
+                            DropArea {
+                                anchors.fill: parent
+                                keys: ["text/uri-list"]
+
+                                onEntered: function(drag) {
+                                    // Accept the drag if it contains URLs with image extensions
+                                    var hasImage = false
+                                    if (drag.hasUrls) {
+                                        for (var i = 0; i < drag.urls.length; i++) {
+                                            var url = drag.urls[i].toString()
+                                            if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff?)$/i)) {
+                                                hasImage = true
+                                                break
                                             }
                                         }
+                                    }
+                                    drag.accepted = hasImage
+                                }
+
+                                onDropped: function(drop) {
+                                    if (drop.hasUrls) {
+                                        // Calculate text position from mouse coordinates
+                                        // drop.x is relative to the DropArea (ScrollView)
+                                        // Subtract line numbers width to get position within TextArea
+                                        var textX = Math.max(0, drop.x - lineNumbers.width)
+                                        var textY = drop.y
+                                        var insertPosition = textArea.positionAt(textX, textY)
+
+                                        for (var i = 0; i < drop.urls.length; i++) {
+                                            var url = drop.urls[i].toString()
+                                            if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|tiff?)$/i)) {
+                                                var link = FileController.processImage(url, root.repoPath, tabItem.path)
+                                                if (!link.startsWith("Error")) {
+                                                    textArea.insert(insertPosition, link + "\n")
+                                                    // Update position for next image (if multiple dropped)
+                                                    insertPosition += link.length + 1
+                                                } else {
+                                                    console.error("Image processing error:", link)
+                                                }
+                                            }
+                                        }
+                                        drop.accept(Qt.CopyAction)
                                     }
                                 }
                             }
