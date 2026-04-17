@@ -2,6 +2,25 @@ package main
 
 /*
 #include <stdlib.h>
+#include <string.h>
+
+// Forward declarations for C callbacks
+typedef void (*lspDiagnosticCallback)(const char* uri, const char* jsonDiagnostics);
+typedef void (*lspHoverCallback)(const char* uri, int line, int character, const char* contents);
+typedef void (*lspLogCallback)(const char* message);
+
+// Global callback pointers - marked as extern so they're defined in lspclient.cpp
+extern lspDiagnosticCallback g_diagnosticCallback;
+extern lspHoverCallback g_hoverCallback;
+extern lspLogCallback g_logCallback;
+
+// C helper functions for callbacks - declared here, defined in lspclient.cpp
+extern void setDiagnosticCallback(lspDiagnosticCallback cb);
+extern void setHoverCallback(lspHoverCallback cb);
+extern void setLogCallback(lspLogCallback cb);
+extern void callDiagnosticCallback(const char* uri, const char* jsonDiagnostics);
+extern void callHoverCallback(const char* uri, int line, int character, const char* contents);
+extern void callLogCallback(const char* message);
 */
 import "C"
 
@@ -21,6 +40,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/image/draw"
+	"github.com/akhenakh/qtmarkdown/backend/lsp"
 )
 
 // Config represents the qhugo configuration file
@@ -342,6 +362,287 @@ func GetHugoURL(filePathC, repoPathC *C.char) *C.char {
 
 	// Not in content directory, return empty
 	return C.CString("")
+}
+
+// =============================================================================
+// LSP Client Integration
+// =============================================================================
+
+var lspManager *lsp.Manager
+
+// getLSPConfigPath returns the path to LSP configuration
+func getLSPConfigPath() string {
+	return filepath.Join(getConfigDir(), "lsp.json")
+}
+
+//export LSPSetCallbacks
+func LSPSetCallbacks(diagnosticCb, hoverCb, logCb unsafe.Pointer) {
+	C.setDiagnosticCallback((C.lspDiagnosticCallback)(diagnosticCb))
+	C.setHoverCallback((C.lspHoverCallback)(hoverCb))
+	C.setLogCallback((C.lspLogCallback)(logCb))
+}
+
+// handleDiagnostics forwards diagnostics to C++
+func handleDiagnostics(uri string, diagnostics []lsp.Diagnostic) {
+	log.Printf("[Backend] handleDiagnostics called for %s with %d diagnostics", uri, len(diagnostics))
+	// Convert diagnostics to JSON
+	type diagnosticJSON struct {
+		Line      int    `json:"line"`
+		Character int    `json:"character"`
+		EndLine   int    `json:"endLine"`
+		EndChar   int    `json:"endCharacter"`
+		Severity  int    `json:"severity"`
+		Code      string `json:"code,omitempty"`
+		Source    string `json:"source,omitempty"`
+		Message   string `json:"message"`
+	}
+
+	jsonDiags := make([]diagnosticJSON, len(diagnostics))
+	for i, d := range diagnostics {
+		jsonDiags[i] = diagnosticJSON{
+			Line:      d.Range.Start.Line,
+			Character: d.Range.Start.Character,
+			EndLine:   d.Range.End.Line,
+			EndChar:   d.Range.End.Character,
+			Severity:  d.Severity,
+			Source:    d.Source,
+			Message:   d.Message,
+		}
+		if d.Code != nil {
+			jsonDiags[i].Code = fmt.Sprintf("%v", d.Code)
+		}
+	}
+
+	data, _ := json.Marshal(jsonDiags)
+	uriC := C.CString(uri)
+	dataC := C.CString(string(data))
+	defer C.free(unsafe.Pointer(uriC))
+	defer C.free(unsafe.Pointer(dataC))
+
+	log.Printf("[Backend] Calling C.callDiagnosticCallback with %d diagnostics", len(jsonDiags))
+	C.callDiagnosticCallback(uriC, dataC)
+	log.Printf("[Backend] C.callDiagnosticCallback completed")
+}
+
+// handleHover forwards hover results to C++
+func handleHover(uri string, line, char int, hover *lsp.Hover) {
+	uriC := C.CString(uri)
+	contentsC := C.CString(hover.Contents.Value)
+	defer C.free(unsafe.Pointer(uriC))
+	defer C.free(unsafe.Pointer(contentsC))
+
+	C.callHoverCallback(uriC, C.int(line), C.int(char), contentsC)
+}
+
+// handleLog forwards log messages to C++
+func handleLog(uri string, diagnostics []lsp.Diagnostic) {
+	msgC := C.CString(uri)
+	defer C.free(unsafe.Pointer(msgC))
+	C.callLogCallback(msgC)
+}
+
+//export LSPInitialize
+func LSPInitialize() int {
+	if lspManager != nil {
+		return 1 // already initialized
+	}
+
+	configPath := getLSPConfigPath()
+	log.Printf("[Backend] LSPInitialize called, config path: %s", configPath)
+	
+	lspManager = lsp.NewManager(configPath, handleDiagnostics, handleLog, handleHover)
+	
+	if err := lspManager.LoadConfig(); err != nil {
+		log.Printf("[Backend] Failed to load LSP config: %v", err)
+		// Continue with default config
+	} else {
+		log.Printf("[Backend] LSP config loaded successfully")
+	}
+	
+	log.Printf("[Backend] LSP enabled: %v", lspManager.IsEnabled())
+
+	return 1
+}
+
+//export LSPCleanup
+func LSPCleanup() {
+	if lspManager != nil {
+		lspManager.StopClients()
+		lspManager = nil
+	}
+}
+
+//export LSPSetWorkspaceRoot
+func LSPSetWorkspaceRoot(rootC *C.char) {
+	if lspManager == nil {
+		return
+	}
+	root := C.GoString(rootC)
+	lspManager.SetWorkspaceRoot(root)
+}
+
+//export LSPDocumentOpened
+func LSPDocumentOpened(uriC, languageIDC, contentC *C.char) {
+	if lspManager == nil {
+		return
+	}
+	
+	uri := C.GoString(uriC)
+	languageID := C.GoString(languageIDC)
+	content := C.GoString(contentC)
+	
+	lspManager.DocumentOpened(uri, languageID, content)
+}
+
+//export LSPDocumentChanged
+func LSPDocumentChanged(uriC, contentC *C.char) {
+	if lspManager == nil {
+		log.Printf("[Backend] LSPDocumentChanged: lspManager is nil!")
+		return
+	}
+	
+	uri := C.GoString(uriC)
+	content := C.GoString(contentC)
+	log.Printf("[Backend] LSPDocumentChanged called for %s (content length: %d)", uri, len(content))
+	
+	lspManager.DocumentChanged(uri, content)
+}
+
+//export LSPDocumentClosed
+func LSPDocumentClosed(uriC *C.char) {
+	if lspManager == nil {
+		return
+	}
+	
+	uri := C.GoString(uriC)
+	lspManager.DocumentClosed(uri)
+}
+
+//export LSPRequestHover
+func LSPRequestHover(uriC *C.char, line, character int) {
+	if lspManager == nil {
+		return
+	}
+	
+	uri := C.GoString(uriC)
+	lspManager.Hover(uri, line, character)
+}
+
+//export LSPIsEnabled
+func LSPIsEnabled() int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	if lspManager.IsEnabled() {
+		return 1
+	}
+	return 0
+}
+
+//export LSPSetEnabled
+func LSPSetEnabled(enabled int) int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	if err := lspManager.SetEnabled(enabled == 1); err != nil {
+		log.Printf("Failed to set LSP enabled: %v", err)
+		return 0
+	}
+	return 1
+}
+
+//export LSPStartClients
+func LSPStartClients() int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	if err := lspManager.StartClients(); err != nil {
+		log.Printf("Failed to start LSP clients: %v", err)
+		return 0
+	}
+	return 1
+}
+
+//export LSPStopClients
+func LSPStopClients() {
+	if lspManager == nil {
+		return
+	}
+	
+	lspManager.StopClients()
+}
+
+//export LSPGetServers
+func LSPGetServers() *C.char {
+	if lspManager == nil {
+		return C.CString("[]")
+	}
+	
+	servers := lspManager.GetServers()
+	data, err := json.Marshal(servers)
+	if err != nil {
+		return C.CString("[]")
+	}
+	return C.CString(string(data))
+}
+
+//export LSPAddServer
+func LSPAddServer(jsonConfigC *C.char) int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	jsonConfig := C.GoString(jsonConfigC)
+	
+	var server lsp.ServerConfig
+	if err := json.Unmarshal([]byte(jsonConfig), &server); err != nil {
+		log.Printf("Failed to parse server config: %v", err)
+		return 0
+	}
+	
+	if err := lspManager.AddServer(server); err != nil {
+		log.Printf("Failed to add server: %v", err)
+		return 0
+	}
+	return 1
+}
+
+//export LSPRemoveServer
+func LSPRemoveServer(nameC *C.char) int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	name := C.GoString(nameC)
+	
+	if err := lspManager.RemoveServer(name); err != nil {
+		log.Printf("Failed to remove server: %v", err)
+		return 0
+	}
+	return 1
+}
+
+//export LSPSetServerEnabled
+func LSPSetServerEnabled(nameC *C.char, enabled int) int {
+	if lspManager == nil {
+		return 0
+	}
+	
+	name := C.GoString(nameC)
+	servers := lspManager.GetServers()
+	
+	for i, s := range servers {
+		if s.Name == name {
+			servers[i].Enabled = (enabled == 1)
+			// Need to update via manager's config
+			break
+		}
+	}
+	
+	return 1
 }
 
 func main() {}

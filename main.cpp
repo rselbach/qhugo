@@ -3,6 +3,7 @@
 #include <QQmlContext>
 #include <QtWebEngineQuick>
 #include "filecontroller.h"
+#include "lspclient.h"
 #include "markdownhighlighter.h" 
 
 using namespace Qt::StringLiterals;
@@ -15,6 +16,9 @@ int main(int argc, char *argv[])
 
     // Register the Highlighter Class
     qmlRegisterType<MarkdownHighlighter>("QHugo", 1, 0, "MarkdownHighlighter");
+    
+    // Register the LSP Client
+    qmlRegisterType<LspClient>("QHugo", 1, 0, "LspClient");
 
     QQmlApplicationEngine engine;
 

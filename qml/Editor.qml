@@ -8,6 +8,7 @@ Item {
     
     property string repoPath
     property string currentFilePath: ""
+    property LspClient lspClient: null
 
     signal contentSaved()
     signal fileOpened(string filePath)
@@ -44,6 +45,27 @@ Item {
         tabBar.currentIndex = tabModel.count - 1
         root.currentFilePath = cleanPath
         root.fileOpened(cleanPath)
+        
+        // Notify LSP client about opened document
+        if (lspClient && lspClient.enabled) {
+            var ext = cleanPath.split('.').pop().toLowerCase()
+            var langId = ext === "md" || ext === "markdown" ? "markdown" : ext
+            lspClient.documentOpened(cleanPath, langId, content)
+        }
+    }
+    
+    function onEditorTextChanged(filePath, text) {
+        // Notify LSP about document changes
+        console.log("[Editor] onEditorTextChanged called for", filePath)
+        if (!lspClient) {
+            console.log("[Editor] lspClient is null!")
+            return
+        }
+        console.log("[Editor] lspClient.enabled:", lspClient.enabled)
+        if (lspClient.enabled && filePath !== "") {
+            console.log("[Editor] Calling lspClient.documentChanged")
+            lspClient.documentChanged(filePath, text)
+        }
     }
 
     function onTabChanged() {
@@ -58,6 +80,13 @@ Item {
 
     function closeTab(index) {
         if (index < 0 || index >= tabModel.count) return;
+        
+        // Notify LSP about document closure
+        var item = tabModel.get(index)
+        if (lspClient && lspClient.enabled && item && item.filePath) {
+            lspClient.documentClosed(item.filePath)
+        }
+        
         tabModel.remove(index);
         if (tabBar.currentIndex >= tabModel.count) {
             tabBar.currentIndex = tabModel.count - 1;
@@ -159,49 +188,227 @@ Item {
                             Row {
                                 width: scrollView.availableWidth
 
-                                Column {
-                                    id: lineNumbers
-                                    width: 40
-                                    Repeater {
-                                        model: textArea.lineCount
-                                        Label {
-                                            width: 40
-                                            height: textArea.cursorRectangle.height
-                                            horizontalAlignment: Text.AlignRight
-                                            padding: 5
-                                            text: index + 1
-                                            color: "#888"
-                                            font: textArea.font
+        Column {
+            id: lineNumbers
+            width: 50
+            property int diagVersion: 0
+
+            Connections {
+                target: root.lspClient
+                function onDiagnosticsChanged() {
+                    lineNumbers.diagVersion++
+                }
+            }
+
+            Repeater {
+                model: textArea.lineCount
+                Row {
+                    width: 50
+                    height: textArea.cursorRectangle.height
+                    spacing: 2
+
+                    // Diagnostic indicator
+                    Rectangle {
+                        width: 6
+                        height: 6
+                        radius: 3
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: {
+                            if (!root.lspClient) return "transparent"
+                            var _ = lineNumbers.diagVersion
+                            var sev = root.lspClient.getDiagnosticSeverityColor(index)
+                            if (sev === "error") return "#e06c75"
+                            if (sev === "warning") return "#e5c07b"
+                            if (sev === "info") return "#61afef"
+                            if (sev === "hint") return "#98c379"
+                            return "transparent"
+                        }
+                        visible: color !== "transparent"
+                    }
+
+                    // Line number
+                    Label {
+                        width: 40
+                        height: textArea.cursorRectangle.height
+                        horizontalAlignment: Text.AlignRight
+                        padding: 5
+                        text: index + 1
+                        color: {
+                            if (!root.lspClient) return "#888"
+                            var _ = lineNumbers.diagVersion
+                            var sev = root.lspClient.getDiagnosticSeverityColor(index)
+                            if (sev === "error") return "#e06c75"
+                            if (sev === "warning") return "#e5c07b"
+                            return "#888"
+                        }
+                        font: textArea.font
+                    }
+                }
+            }
+        }
+
+                    TextArea {
+                        id: textArea
+                        width: parent.width - lineNumbers.width
+                        text: fileContent
+                        textFormat: TextEdit.PlainText
+
+                        font.family: "Courier New"
+                        font.pixelSize: 14
+                        padding: 0
+                        leftPadding: 5
+
+                        wrapMode: TextEdit.Wrap
+                        selectByMouse: true
+
+                        background: Rectangle {
+                            color: "transparent"
+                            border.width: 0
+                        }
+
+                        color: Qt.application.styleHints.colorScheme === Qt.Dark ? "white" : "black"
+
+                        // Notify LSP on user edits (not programmatic changes)
+                        onTextEdited: {
+                            var currentPath = tabModel.get(tabBar.currentIndex) ? tabModel.get(tabBar.currentIndex).filePath : ""
+                            if (currentPath !== "") {
+                                root.onEditorTextChanged(currentPath, text)
+                            }
+                        }
+
+                        // Hover handling for LSP
+                        MouseArea {
+                            id: hoverArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.NoButton
+                            propagateComposedEvents: true
+
+                            property var hoverTimer: Timer {
+                                interval: 300
+                                property int pendingLine: -1
+                                property int pendingCol: -1
+                                onTriggered: {
+                                    if (root.lspClient && root.lspClient.enabled && pendingLine >= 0) {
+                                        root.lspClient.requestHover(root.currentFilePath, pendingLine, pendingCol)
+                                    }
+                                }
+                            }
+
+                            onPositionChanged: function(mouse) {
+                                var pos = textArea.positionAt(mouse.x, mouse.y)
+                                var line = 0
+                                var lineStart = 0
+                                var text = textArea.text
+                                for (var i = 0; i < text.length; i++) {
+                                    if (i === pos) break
+                                    if (text[i] === '\n') {
+                                        line++
+                                        lineStart = i + 1
+                                    }
+                                }
+                                var col = pos - lineStart
+
+                                hoverArea.hoverTimer.pendingLine = line
+                                hoverArea.hoverTimer.pendingCol = col
+                                hoverArea.hoverTimer.restart()
+                            }
+
+                            onExited: {
+                                hoverArea.hoverTimer.stop()
+                                hoverTooltip.hide()
+                            }
+                        }
+
+                        MarkdownHighlighter {
+                            id: highlighter
+                            document: textArea.textDocument
+                        }
+
+                        Connections {
+                            target: root.lspClient
+                            function onDiagnosticsChanged() {
+                                highlighter.setDiagnostics(root.lspClient.currentDiagnostics)
+                            }
+                        }
+
+                        // Hover Tooltip
+                        Rectangle {
+                            id: hoverTooltip
+                            visible: false
+                            color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#323232" : "#fafafa"
+                            border.color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#555" : "#ccc"
+                            border.width: 1
+                            radius: 4
+                            width: tooltipContent.implicitWidth + 16
+                            height: tooltipContent.implicitHeight + 12
+                            z: 100
+
+                            property string content: ""
+
+                            function show(text, x, y) {
+                                content = text
+                                tooltipContent.text = text
+                                var newX = x + 10
+                                var newY = y - height - 10
+                                if (newX + width > textArea.width) newX = textArea.width - width - 5
+                                if (newY < 0) newY = y + 20
+                                x = newX
+                                y = newY
+                                visible = true
+                            }
+
+                            function hide() {
+                                visible = false
+                                content = ""
+                            }
+
+                            TextEdit {
+                                id: tooltipContent
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                readOnly: true
+                                wrapMode: TextEdit.WordWrap
+                                font.pixelSize: 12
+                                color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#ddd" : "#333"
+                                textFormat: TextEdit.PlainText
+                            }
+
+                            Connections {
+                                target: root.lspClient
+                                function onHoverReceived(uri, line, character, contents) {
+                                    if (contents && contents.length > 0) {
+                                        // Calculate position for line and character
+                                        var pos = 0
+                                        var currentLine = 0
+                                        for (var i = 0; i < textArea.text.length && currentLine < line; i++) {
+                                            if (textArea.text[i] === '\n') {
+                                                currentLine++
+                                                if (currentLine === line) {
+                                                    pos = i + 1 + character
+                                                    break
+                                                }
+                                            }
                                         }
+                                        if (currentLine < line) {
+                                            pos = textArea.text.length
+                                        } else if (currentLine === line && pos === 0) {
+                                            pos = character
+                                        }
+
+                                        var rect = textArea.cursorRectangle
+                                        var oldPos = textArea.cursorPosition
+                                        textArea.cursorPosition = pos
+                                        rect = textArea.cursorRectangle
+                                        textArea.cursorPosition = oldPos
+                                        hoverTooltip.show(contents, rect.x, rect.y)
+                                    } else {
+                                        hoverTooltip.hide()
                                     }
                                 }
-
-                                TextArea {
-                                    id: textArea
-                                    width: parent.width - lineNumbers.width
-                                    text: fileContent
-                                    textFormat: TextEdit.PlainText
-
-                                    font.family: "Courier New"
-                                    font.pixelSize: 14
-                                    padding: 0
-                                    leftPadding: 5
-
-                                    wrapMode: TextEdit.Wrap
-                                    selectByMouse: true
-
-                                    background: Rectangle {
-                                        color: "transparent"
-                                        border.width: 0
-                                    }
-
-                                    color: Qt.application.styleHints.colorScheme === Qt.Dark ? "white" : "black"
-
-                                    MarkdownHighlighter {
-                                        id: highlighter
-                                        document: textArea.textDocument
-                                    }
-                                }
+                            }
+                        }
+                    }
                             }
 
                             // Catch Image Drag and Drop - placed as sibling to content to avoid event conflicts

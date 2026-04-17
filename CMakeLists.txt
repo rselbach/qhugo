@@ -26,6 +26,8 @@ qt_add_executable(appQHugo
     main.cpp
     filecontroller.cpp
     filecontroller.h
+    lspclient.cpp
+    lspclient.h
     markdownhighlighter.cpp
     markdownhighlighter.h
     # Add Library Files

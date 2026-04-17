@@ -24,6 +24,25 @@ extern const char *_GoStringPtr(_GoString_ s);
 #line 3 "backend.go"
 
 #include <stdlib.h>
+#include <string.h>
+
+// Forward declarations for C callbacks
+typedef void (*lspDiagnosticCallback)(const char* uri, const char* jsonDiagnostics);
+typedef void (*lspHoverCallback)(const char* uri, int line, int character, const char* contents);
+typedef void (*lspLogCallback)(const char* message);
+
+// Global callback pointers - marked as extern so they're defined in lspclient.cpp
+extern lspDiagnosticCallback g_diagnosticCallback;
+extern lspHoverCallback g_hoverCallback;
+extern lspLogCallback g_logCallback;
+
+// C helper functions for callbacks - declared here, defined in lspclient.cpp
+extern void setDiagnosticCallback(lspDiagnosticCallback cb);
+extern void setHoverCallback(lspHoverCallback cb);
+extern void setLogCallback(lspLogCallback cb);
+extern void callDiagnosticCallback(const char* uri, const char* jsonDiagnostics);
+extern void callHoverCallback(const char* uri, int line, int character, const char* contents);
+extern void callLogCallback(const char* message);
 
 #line 1 "cgo-generated-wrapper"
 
@@ -99,6 +118,22 @@ extern GoInt StartHugo(char* repoC);
 extern void StopHugo(void);
 extern char* ProcessImage(char* srcC, char* repoC, char* docC);
 extern char* GetHugoURL(char* filePathC, char* repoPathC);
+extern void LSPSetCallbacks(void* diagnosticCb, void* hoverCb, void* logCb);
+extern GoInt LSPInitialize(void);
+extern void LSPCleanup(void);
+extern void LSPSetWorkspaceRoot(char* rootC);
+extern void LSPDocumentOpened(char* uriC, char* languageIDC, char* contentC);
+extern void LSPDocumentChanged(char* uriC, char* contentC);
+extern void LSPDocumentClosed(char* uriC);
+extern void LSPRequestHover(char* uriC, GoInt line, GoInt character);
+extern GoInt LSPIsEnabled(void);
+extern GoInt LSPSetEnabled(GoInt enabled);
+extern GoInt LSPStartClients(void);
+extern void LSPStopClients(void);
+extern char* LSPGetServers(void);
+extern GoInt LSPAddServer(char* jsonConfigC);
+extern GoInt LSPRemoveServer(char* nameC);
+extern GoInt LSPSetServerEnabled(char* nameC, GoInt enabled);
 
 #ifdef __cplusplus
 }

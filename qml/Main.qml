@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtWebEngine
+import QHugo 1.0
 
 ApplicationWindow {
     id: window
@@ -15,6 +16,18 @@ ApplicationWindow {
     property string currentDir: ""  // Current directory for file browser navigation
     property int hugoPort: 1313
     property bool configLoaded: false
+    property bool hugoStarting: false
+
+    // LSP Client for language server integration
+    LspClient {
+        id: lspClient
+        onLogMessage: function(msg) {
+            console.log("[LSP] " + msg)
+        }
+        onDiagnosticsChanged: function() {
+            console.log("[LSP] Diagnostics updated")
+        }
+    }
 
     Shortcut {
         sequence: "Ctrl+P"
@@ -23,6 +36,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "Meta+P"
         onActivated: fuzzyFinder.open()
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+L"
+        onActivated: {
+            lspClient.enabled = !lspClient.enabled
+            console.log("LSP " + (lspClient.enabled ? "enabled" : "disabled"))
+        }
     }
 
 function setHugoRoot(dir) {
@@ -33,6 +53,12 @@ function setHugoRoot(dir) {
     console.log("Setting Hugo root:", dir)
     hugoRoot = dir
     currentDir = dir
+    hugoStarting = true
+    
+    // Set LSP workspace root
+    console.log("[Main] Calling lspClient.setWorkspaceRoot with:", dir)
+    lspClient.setWorkspaceRoot(dir)
+    console.log("[Main] lspClient.setWorkspaceRoot returned")
 
     window.hugoPort = FileController.startHugoServer(dir)
     webView.url = ""
@@ -58,6 +84,11 @@ function navigateTo(dir) {
 
     // Load config on startup
     Component.onCompleted: {
+        // Initialize LSP client
+        console.log("[Main] About to call lspClient.initialize()")
+        lspClient.initialize()
+        console.log("[Main] lspClient.initialize() returned, enabled:", lspClient.enabled)
+        
         // Small delay to ensure everything is ready
         Qt.callLater(function() {
             var savedDir = FileController.loadConfigCurrent()
@@ -175,6 +206,7 @@ function navigateTo(dir) {
             SplitView.fillWidth: true
             SplitView.preferredWidth: 500
             repoPath: window.hugoRoot
+            lspClient: lspClient
             onContentSaved: {
                 // Hugo handles live-reloading inside the webview via sockets.
             }

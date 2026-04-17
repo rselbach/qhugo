@@ -1,8 +1,11 @@
 #include "markdownhighlighter.h"
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QDebug>
+#include <QJsonArray>
+#include <QJsonObject>
 
 using namespace QSourceHighlite;
 
@@ -161,27 +164,32 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
             auto lang = getLanguageFromFence(text);
             setCurrentBlockState(lang);
             setFormat(0, text.length(), codeBlockFormat);
+            applyDiagnostics(text, currentBlock().blockNumber(), currentBlock().position());
             return;
         } else {
             // Closing Fence
             setCurrentBlockState(-1);
             setFormat(0, text.length(), codeBlockFormat);
+            applyDiagnostics(text, currentBlock().blockNumber(), currentBlock().position());
             return;
         }
     }
 
     if (currentState != -1) {
         // --- INSIDE CODE BLOCK ---
-        setCurrentBlockState(currentState); 
-        
+        setCurrentBlockState(currentState);
+
         // 1. Apply Base Format (Background + Base Text Color)
         // This is crucial. We must apply the base format to the WHOLE string first.
-        // This ensures whitespace and non-highlighted tokens get the correct background 
+        // This ensures whitespace and non-highlighted tokens get the correct background
         // AND the correct foreground (overriding QML defaults).
         setFormat(0, text.length(), _codeFormats[QSourceHighliter::Token::CodeBlock]);
-        
+
         // 2. Apply Syntax Highlighting (will overlay specific tokens)
         highlightSyntax(text);
+
+        // 3. Apply LSP diagnostics (squiggly underlines)
+        applyDiagnostics(text, currentBlock().blockNumber(), currentBlock().position());
         return;
     }
 
@@ -195,6 +203,9 @@ void MarkdownHighlighter::highlightBlock(const QString &text)
             setFormat(match.capturedStart(), match.capturedLength(), rule.format);
         }
     }
+
+    // Apply LSP diagnostics (squiggly underlines) after syntax highlighting
+    applyDiagnostics(text, currentBlock().blockNumber(), currentBlock().position());
 }
 
 // =============================================================================
@@ -453,6 +464,83 @@ int MarkdownHighlighter::highlightStringLiterals(const QChar strType, const QStr
         ++i;
     }
     return i;
+}
+
+void MarkdownHighlighter::setDiagnostics(const QJsonArray &diagnostics)
+{
+    m_diagnostics.clear();
+
+    for (const auto &val : diagnostics) {
+        if (!val.isObject()) continue;
+
+        QJsonObject obj = val.toObject();
+        LSPDiagnosticRange diag;
+        diag.startLine = obj["line"].toInt();
+        diag.startColumn = obj["character"].toInt();
+        diag.endLine = obj["endLine"].toInt();
+        diag.endColumn = obj["endCharacter"].toInt();
+        diag.severity = obj["severity"].toInt();
+        diag.message = obj["message"].toString();
+
+        m_diagnostics.append(diag);
+    }
+
+    rehighlight();
+}
+
+void MarkdownHighlighter::clearDiagnostics()
+{
+    m_diagnostics.clear();
+    rehighlight();
+}
+
+void MarkdownHighlighter::applyDiagnostics(const QString &text, int blockNumber, int blockStart)
+{
+    Q_UNUSED(blockStart);
+
+    for (const auto &diag : m_diagnostics) {
+        int diagStartLine = diag.startLine;
+        int diagEndLine = diag.endLine;
+
+        if (blockNumber < diagStartLine || blockNumber > diagEndLine)
+            continue;
+
+        int startCol = (blockNumber == diagStartLine) ? diag.startColumn : 0;
+        int endCol = (blockNumber == diagEndLine) ? diag.endColumn : text.length();
+
+        // Clamp to text length just in case
+        if (startCol < 0) startCol = 0;
+        if (endCol > text.length()) endCol = text.length();
+
+        // In LSP, a diagnostic can span 0 characters, but we need at least 1 character to show an underline.
+        if (startCol == endCol && startCol < text.length()) {
+            endCol = startCol + 1;
+        }
+
+        if (startCol < endCol) {
+            QTextCharFormat diagnosticFormat;
+            diagnosticFormat.setUnderlineStyle(QTextCharFormat::SpellCheckUnderline);
+
+            switch (diag.severity) {
+            case 1:  // Error
+                diagnosticFormat.setUnderlineColor(QColor("#e06c75"));
+                break;
+            case 2:  // Warning
+                diagnosticFormat.setUnderlineColor(QColor("#e5c07b"));
+                break;
+            case 3:  // Info
+                diagnosticFormat.setUnderlineColor(QColor("#61afef"));
+                break;
+            case 4:  // Hint
+            default:
+                diagnosticFormat.setUnderlineColor(QColor("#98c379"));
+                break;
+            }
+
+            // Using QSyntaxHighlighter::setFormat merges the squiggly underline gracefully with the base formats.
+            setFormat(startCol, endCol - startCol, diagnosticFormat);
+        }
+    }
 }
 
 QQuickTextDocument *MarkdownHighlighter::document() const
