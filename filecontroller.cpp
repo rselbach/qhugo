@@ -74,8 +74,12 @@ QString FileController::readFile(const QString &path) {
         localPath = QUrl(path).toLocalFile();
     }
 
-    char* cPath = localPath.toUtf8().data();
-    char* content = ReadFileContent(cPath);
+    // Keep the QByteArray alive: toUtf8() returns a temporary that would be
+    // destroyed at the end of this statement, leaving .data() dangling before
+    // we hand it to Go. On macOS that dangles to random memory and the read
+    // returns "".
+    QByteArray pathBytes = localPath.toUtf8();
+    char* content = ReadFileContent(pathBytes.data());
     QString result = QString::fromUtf8(content);
     FreeString(content);
     return result;
