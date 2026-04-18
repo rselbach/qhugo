@@ -230,9 +230,9 @@ function navigateTo(dir) {
         }
     }
 
-    FuzzyFinder {
-        id: fuzzyFinder
-        rootPath: window.currentDir
+  FuzzyFinder {
+    id: fuzzyFinder
+    rootPath: window.hugoRoot
         onFileSelected: function(path) {
             editor.openFile(path)
         }
