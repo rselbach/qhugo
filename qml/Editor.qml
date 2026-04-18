@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QHugo 1.0
 
@@ -192,95 +192,97 @@ Item {
         ColumnLayout {
             anchors.fill: parent
 
-            // Editor Area
-            ScrollView {
-                            id: scrollView
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
+    // Editor Area
+    Flickable {
+      id: scrollView
+      Layout.fillWidth: true
+      Layout.fillHeight: true
+      clip: true
+      contentWidth: editorRow.width
+      contentHeight: Math.max(editorRow.height, scrollView.height)
+      ScrollBar.vertical: ScrollBar {}
 
-                            Row {
-                                width: scrollView.availableWidth
+      Row {
+        id: editorRow
+        width: scrollView.width
+        height: textArea.contentHeight
 
         Column {
-            id: lineNumbers
-            width: 50
-            property int diagVersion: 0
+          id: lineNumbers
+          width: 50
+          height: textArea.height
+          property int diagVersion: 0
 
-            Connections {
-                target: root.lspClient
-                function onDiagnosticsChanged() {
-                    lineNumbers.diagVersion++
-                }
+          Connections {
+            target: root.lspClient
+            function onDiagnosticsChanged() {
+              lineNumbers.diagVersion++
             }
+          }
 
-            Repeater {
-                model: textArea.lineCount
-                Row {
-                    width: 50
-                    height: textArea.cursorRectangle.height
-                    spacing: 2
+          Repeater {
+            model: textArea.lineCount
+            Row {
+              width: 50
+              height: textArea.cursorRectangle.height
+              spacing: 2
 
-                    // Diagnostic indicator
-                    Rectangle {
-                        width: 6
-                        height: 6
-                        radius: 3
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: {
-                            if (!root.lspClient) return "transparent"
-                            var _ = lineNumbers.diagVersion
-                            var sev = root.lspClient.getDiagnosticSeverityColor(index)
-                            if (sev === "error") return "#e06c75"
-                            if (sev === "warning") return "#e5c07b"
-                            if (sev === "info") return "#61afef"
-                            if (sev === "hint") return "#98c379"
-                            return "transparent"
-                        }
-                        visible: color !== "transparent"
-                    }
-
-                    // Line number
-                    Label {
-                        width: 40
-                        height: textArea.cursorRectangle.height
-                        horizontalAlignment: Text.AlignRight
-                        padding: 5
-                        text: index + 1
-                        color: {
-                            if (!root.lspClient) return "#888"
-                            var _ = lineNumbers.diagVersion
-                            var sev = root.lspClient.getDiagnosticSeverityColor(index)
-                            if (sev === "error") return "#e06c75"
-                            if (sev === "warning") return "#e5c07b"
-                            return "#888"
-                        }
-                        font: textArea.font
-                    }
+              // Diagnostic indicator
+              Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                anchors.verticalCenter: parent.verticalCenter
+                color: {
+                  if (!root.lspClient) return "transparent"
+                  var _ = lineNumbers.diagVersion
+                  var sev = root.lspClient.getDiagnosticSeverityColor(index)
+                  if (sev === "error") return "#e06c75"
+                  if (sev === "warning") return "#e5c07b"
+                  if (sev === "info") return "#61afef"
+                  if (sev === "hint") return "#98c379"
+                  return "transparent"
                 }
+                visible: color !== "transparent"
+              }
+
+              // Line number
+              Label {
+                width: 40
+                height: textArea.cursorRectangle.height
+                horizontalAlignment: Text.AlignRight
+                padding: 5
+                text: index + 1
+                color: {
+                  if (!root.lspClient) return "#888"
+                  var _ = lineNumbers.diagVersion
+                  var sev = root.lspClient.getDiagnosticSeverityColor(index)
+                  if (sev === "error") return "#e06c75"
+                  if (sev === "warning") return "#e5c07b"
+                  return "#888"
+                }
+                font: textArea.font
+              }
             }
+          }
         }
 
-    TextArea {
-        id: textArea
-        width: parent.width - lineNumbers.width
-        text: fileContent
-        textFormat: TextEdit.StyledText
+        TextArea {
+          id: textArea
+          width: parent.width - lineNumbers.width
+          height: contentHeight
+          text: fileContent
+          textFormat: TextEdit.PlainText
 
-                        font.family: "Courier New"
-                        font.pixelSize: 14
-                        padding: 0
-                        leftPadding: 5
+          font.family: "Courier New"
+          font.pixelSize: 14
+          padding: 0
+          leftPadding: 5
 
-                        wrapMode: TextEdit.Wrap
-                        selectByMouse: true
+          wrapMode: TextEdit.Wrap
+          selectByMouse: true
 
-                        background: Rectangle {
-                            color: "transparent"
-                            border.width: 0
-                        }
-
-                        color: Qt.application.styleHints.colorScheme === Qt.Dark ? "white" : "black"
+          color: Qt.application.styleHints.colorScheme === Qt.Dark ? "white" : "black"
 
             // Notify LSP on user edits (not programmatic changes)
             onTextEdited: {

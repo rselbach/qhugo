@@ -1,7 +1,7 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import Qt.labs.folderlistmodel 2.15
+import Qt.labs.folderlistmodel
 
 Item {
     id: root

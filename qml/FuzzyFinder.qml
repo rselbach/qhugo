@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
 Popup {
@@ -58,18 +58,11 @@ Popup {
         anchors.fill: parent
         anchors.margins: 10
 
-    TextField {
-      id: filterField
-      Layout.fillWidth: true
-      placeholderText: "Search markdown files..."
-      color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#ddd" : "#333"
-      placeholderTextColor: Qt.application.styleHints.colorScheme === Qt.Dark ? "#888" : "#999"
-      background: Rectangle {
-        color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#3a3a3a" : "#fafafa"
-        border.color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#555" : "#ddd"
-        radius: 3
-      }
-      onTextChanged: popup.filter()
+  TextField {
+    id: filterField
+    Layout.fillWidth: true
+    placeholderText: "Search markdown files..."
+    onTextChanged: popup.filter()
             
             Keys.onDownPressed: resultList.incrementCurrentIndex()
             Keys.onUpPressed: resultList.decrementCurrentIndex()
