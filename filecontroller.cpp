@@ -130,8 +130,9 @@ QString FileController::createPost(const QString &repoPath, const QString &title
     QString slug = title.toLower().replace(QRegularExpression("[^a-z0-9]+"), "-");
     QString year = QDateTime::currentDateTime().toString("yyyy");
 
-    QString contentDir = localRepo + "/content/post/" + year;
-    QString contentPath = contentDir + "/" + slug + ".md";
+    // Page bundle: create directory named after slug, with index.md inside
+    QString contentDir = localRepo + "/content/post/" + year + "/" + slug;
+    QString contentPath = contentDir + "/index.md";
 
     QString frontmatter = "---\n";
     frontmatter += "title: \"" + title + "\"\n";
@@ -208,4 +209,13 @@ bool FileController::addSiteAndSetCurrent(const QString &sitePath) {
 
 QString FileController::getDocumentsLocation() {
     return QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+}
+
+bool FileController::isBundleDirectory(const QString &dirPath) {
+    QString localPath = dirPath;
+    if (dirPath.startsWith("file://")) {
+        localPath = QUrl(dirPath).toLocalFile();
+    }
+    QDir dir(localPath);
+    return dir.exists("index.md");
 }

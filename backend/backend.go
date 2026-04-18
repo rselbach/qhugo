@@ -33,6 +33,7 @@ import (
 	_ "image/png"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,26 +266,30 @@ func StopHugo() {
 }
 
 // CatmullRom resize operation to scale down to blog-acceptable size
-func resizeImage(srcPath, dstPath string) error {
+func resizeImage(srcPath, dstPath string, maxWidth int) error {
 	file, err := os.Open(srcPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer file.Close()
 
-	img, _, err := image.Decode(file)
+	img, format, err := image.Decode(file)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to decode image (format: %s): %w", format, err)
 	}
+	log.Printf("[resizeImage] Decoded image format: %s", format)
 
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
+	log.Printf("[resizeImage] Original size: %dx%d", width, height)
 
-	if width > 1200 {
+	if width > maxWidth {
 		ratio := float64(height) / float64(width)
-		newWidth := 1200
+		newWidth := maxWidth
 		newHeight := int(float64(newWidth) * ratio)
+
+		log.Printf("[resizeImage] Resizing to: %dx%d", newWidth, newHeight)
 
 		dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
 		draw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
@@ -293,11 +298,52 @@ func resizeImage(srcPath, dstPath string) error {
 
 	out, err := os.Create(dstPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer out.Close()
 
+	log.Printf("[resizeImage] Encoding to JPEG: %s", dstPath)
 	return jpeg.Encode(out, img, &jpeg.Options{Quality: 85})
+}
+
+// copyFile copies a file from src to dst without modification
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source: %w", err)
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination: %w", err)
+	}
+	defer destFile.Close()
+
+	_, err = destFile.ReadFrom(sourceFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy data: %w", err)
+	}
+
+	return nil
+}
+
+// isBundleContentDir checks if the given doc path is inside a bundle (has index.md)
+func isBundleContentDir(docPath string) bool {
+	docDir := filepath.Dir(docPath)
+	indexPath := filepath.Join(docDir, "index.md")
+	info, err := os.Stat(indexPath)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+// getBundleName returns the bundle name from a doc path (parent dir name if index.md exists)
+func getBundleName(docPath string) string {
+	docDir := filepath.Dir(docPath)
+	base := filepath.Base(docDir)
+	return base
 }
 
 //export ProcessImage
@@ -306,24 +352,98 @@ func ProcessImage(srcC, repoC, docC *C.char) *C.char {
 	repo := C.GoString(repoC)
 	doc := C.GoString(docC)
 
-	docName := filepath.Base(doc)
-	docPrefix := strings.TrimSuffix(docName, filepath.Ext(docName))
+	// Strip file:// prefix if present (from QML URL)
+	src = strings.TrimPrefix(src, "file://")
 
-	imgDir := filepath.Join(repo, "static", "img")
-	os.MkdirAll(imgDir, 0755)
-
-	srcName := filepath.Base(src)
-	dstName := fmt.Sprintf("%s-%s", docPrefix, srcName)
-	dstName = strings.TrimSuffix(dstName, filepath.Ext(dstName)) + ".jpg"
-
-	dstPath := filepath.Join(imgDir, dstName)
-
-	err := resizeImage(src, dstPath)
-	if err != nil {
-		return C.CString(fmt.Sprintf("Error: %v", err))
+	// URL-decode the path (handles spaces and special characters)
+	if decodedPath, err := url.PathUnescape(src); err == nil {
+		src = decodedPath
 	}
 
-	markdownLink := fmt.Sprintf("![%s](/img/%s)", srcName, dstName)
+	log.Printf("[ProcessImage] Processing image: src=%s repo=%s doc=%s", src, repo, doc)
+
+	srcName := filepath.Base(src)
+	ext := strings.ToLower(filepath.Ext(srcName))
+	// Use original extension for bundle resources (Hugo handles it)
+	dstExt := ext
+	if dstExt == "" {
+		dstExt = ".jpg"
+	}
+
+	// Check if source file exists and get size
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		log.Printf("[ProcessImage] Error accessing source file: %v", err)
+		return C.CString(fmt.Sprintf("Error accessing source: %v", err))
+	}
+	log.Printf("[ProcessImage] Source file size: %d bytes", srcInfo.Size())
+
+	// Check if we're in a page bundle (index.md exists in parent dir)
+	var dstPath string
+	var markdownLink string
+
+	docDir := filepath.Dir(doc)
+	indexPath := filepath.Join(docDir, "index.md")
+	_, err = os.Stat(indexPath)
+	isBundle := err == nil
+
+	if isBundle {
+		// Page bundle: save image in same directory as index.md
+		// Keep original extension and do not resize - Hugo will handle optimization
+		dstName := srcName
+		dstPath = filepath.Join(docDir, dstName)
+
+		log.Printf("[ProcessImage] Bundle mode: copying to %s", dstPath)
+
+		// Simple copy - no resize/optimization
+		if err := copyFile(src, dstPath); err != nil {
+			log.Printf("[ProcessImage] Copy error: %v", err)
+			return C.CString(fmt.Sprintf("Error: %v", err))
+		}
+
+		// Verify output file
+		dstInfo, err := os.Stat(dstPath)
+		if err != nil {
+			log.Printf("[ProcessImage] Error accessing output file: %v", err)
+		} else {
+			log.Printf("[ProcessImage] Output file size: %d bytes", dstInfo.Size())
+		}
+
+		// Generate Hugo resources shortcode for bundle images
+		resourceName := dstName
+		markdownLink = fmt.Sprintf("{{ $img := .Resources.Get \"%s\" }}\n![%s]({{ $img.RelPermalink }})", resourceName, srcName)
+	} else {
+		// Traditional: save to static/img
+		docName := filepath.Base(doc)
+		docPrefix := strings.TrimSuffix(docName, filepath.Ext(docName))
+
+		imgDir := filepath.Join(repo, "static", "img")
+		os.MkdirAll(imgDir, 0755)
+
+		dstName := fmt.Sprintf("%s-%s", docPrefix, srcName)
+		dstName = strings.TrimSuffix(dstName, filepath.Ext(dstName)) + ".jpg"
+
+		dstPath = filepath.Join(imgDir, dstName)
+
+		log.Printf("[ProcessImage] Static mode: saving to %s", dstPath)
+
+		err := resizeImage(src, dstPath, 1200)
+		if err != nil {
+			log.Printf("[ProcessImage] Resize error: %v", err)
+			return C.CString(fmt.Sprintf("Error: %v", err))
+		}
+
+		// Verify output file
+		dstInfo, err := os.Stat(dstPath)
+		if err != nil {
+			log.Printf("[ProcessImage] Error accessing output file: %v", err)
+		} else {
+			log.Printf("[ProcessImage] Output file size: %d bytes", dstInfo.Size())
+		}
+
+		markdownLink = fmt.Sprintf("![%s](/img/%s)", srcName, dstName)
+	}
+
 	return C.CString(markdownLink)
 }
 
@@ -348,11 +468,26 @@ func GetHugoURL(filePathC, repoPathC *C.char) *C.char {
 		// Remove the "content/" prefix
 		urlPath := relPath[len(contentPrefix)+1:]
 
-		// Remove .md extension
-		urlPath = strings.TrimSuffix(urlPath, ".md")
-
 		// Replace backslashes with forward slashes for URL
 		urlPath = strings.ReplaceAll(urlPath, "\\", "/")
+
+		// Check if it's an image file
+	ext := strings.ToLower(filepath.Ext(urlPath))
+		isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+			ext == ".gif" || ext == ".webp" || ext == ".svg" ||
+			ext == ".bmp" || ext == ".tiff"
+
+		if isImage {
+			// For images, get the parent directory URL and append the image
+			dir := filepath.Dir(urlPath)
+			base := filepath.Base(urlPath)
+			// Remove /index from the directory if present
+			dir = strings.TrimSuffix(dir, "/index")
+			return C.CString("/" + dir + "/" + base)
+		}
+
+		// Remove .md extension
+		urlPath = strings.TrimSuffix(urlPath, ".md")
 
 		// Hugo URLs typically don't end with /index, remove that suffix
 		urlPath = strings.TrimSuffix(urlPath, "/index")

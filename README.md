@@ -44,3 +44,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## TODO
 
 https://doc.qt.io/qt-6/qtwidgets-richtext-syntaxhighlighter-example.html
+
+right click on file browser, open finder
+right click on file browser add delete file
+
+After an image is drag and dropped emit a text change event so the webview can be reloaded
+
+Full git support
+
+right click in editor add copy paste
+
+
+## Doc
+
+mention using shortcodes/img.html
+
+```
+{{/* Usage: {{< img src="hero.jpg" alt="My caption" >}} */}}
+
+{{ $src := .Get "src" }}
+{{ $alt := .Get "alt" | default "" }}
+{{ $img := .Page.Resources.Get $src }}
+
+{{ if $img }}
+  {{ $webp := $img.Resize "800x webp q85" }}
+  {{ $jpg  := $img.Resize "800x jpeg q85" }}
+
+  <picture>
+    <source type="image/webp" srcset="{{ $webp.RelPermalink }}">
+    <img
+      src="{{ $jpg.RelPermalink }}"
+      width="{{ $jpg.Width }}"
+      height="{{ $jpg.Height }}"
+      alt="{{ $alt }}"
+      loading="lazy">
+  </picture>
+{{ else }}
+  <p style="color:red">Image not found: {{ $src }}</p>
+{{ end }}
+```

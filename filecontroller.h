@@ -22,6 +22,7 @@ public:
     Q_INVOKABLE QString processImage(const QString &srcPath, const QString &repoPath, const QString &docPath);
     Q_INVOKABLE QString createPost(const QString &repoPath, const QString &title);
     Q_INVOKABLE QString getHugoURL(const QString &filePath, const QString &repoPath);
+    Q_INVOKABLE bool isBundleDirectory(const QString &dirPath);
 
     // Config Management
     Q_INVOKABLE QString loadConfigCurrent();

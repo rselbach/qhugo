@@ -193,6 +193,17 @@ function navigateTo(dir) {
         onFileSelected: function(path) {
             editor.openFile(path)
         }
+        onImageSelected: function(path) {
+            // Navigate webview directly to the image file
+            if (window.hugoPort > 0 && window.hugoRoot !== "") {
+                var hugoURL = FileController.getHugoURL(path, window.hugoRoot)
+                if (hugoURL !== "") {
+                    var fullURL = "http://localhost:" + window.hugoPort + hugoURL
+                    console.log("Navigating to image:", fullURL)
+                    webView.url = fullURL
+                }
+            }
+        }
         onDirectorySelected: function(path) {
             window.navigateTo(path)
         }
