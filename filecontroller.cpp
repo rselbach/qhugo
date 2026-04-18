@@ -159,8 +159,13 @@ QString FileController::createPost(const QString &repoPath, const QString &title
     QString contentDir = localRepo + "/content/post/" + year + "/" + slug;
     QString contentPath = contentDir + "/index.md";
 
+    // Escape for a YAML double-quoted scalar so titles containing " or \
+    // don't break the frontmatter.
+    QString escapedTitle = title;
+    escapedTitle.replace("\\", "\\\\").replace("\"", "\\\"");
+
     QString frontmatter = "---\n";
-    frontmatter += "title: \"" + title + "\"\n";
+    frontmatter += "title: \"" + escapedTitle + "\"\n";
     frontmatter += "date: " + QDateTime::currentDateTime().toString(Qt::ISODate) + "\n";
     frontmatter += "draft: true\n";
     frontmatter += "---\n\n";
