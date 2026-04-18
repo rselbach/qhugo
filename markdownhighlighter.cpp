@@ -337,6 +337,8 @@ void MarkdownHighlighter::highlightSyntax(const QString &text)
     const QTextCharFormat &formatBuiltIn = _codeFormats[QSourceHighliter::Token::CodeBuiltIn];
     const QTextCharFormat &formatOther = _codeFormats[QSourceHighliter::Token::CodeOther];
 
+    // The goto Comment below jumps into the middle of the inner while-loop.
+    // Ported verbatim from pbek/qmarkdowntextedit; refactor with caution.
     for (int i = 0; i < textLen; ++i) {
 
         if (currentBlockState() % 2 != 0) goto Comment;

@@ -74,8 +74,6 @@ private:
     void applyDiagnostics(const QString &text, int blockNumber, int blockStart);
 
     // Helpers for the library logic
-    static constexpr inline bool isOctal(const char c) { return (c >= '0' && c <= '7'); }
-    static constexpr inline bool isHex(const char c) { return ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')); }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     static inline QStringView strMidRef(const QString& str, qsizetype position, qsizetype n = -1) { return QStringView(str).mid(position, n); }
 #else

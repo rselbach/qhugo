@@ -47,7 +47,6 @@ class LspClient : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledChanged)
-    Q_PROPERTY(bool clientsRunning READ areClientsRunning NOTIFY clientsRunningChanged)
     Q_PROPERTY(QJsonArray serverConfigs READ getServerConfigs NOTIFY serverConfigsChanged)
     Q_PROPERTY(QJsonArray currentDiagnostics READ getCurrentDiagnostics NOTIFY diagnosticsChanged)
 
@@ -71,7 +70,6 @@ public:
     // Configuration
     Q_INVOKABLE bool isEnabled() const;
     Q_INVOKABLE void setEnabled(bool enabled);
-    Q_INVOKABLE bool areClientsRunning() const;
 
     // Server management
     Q_INVOKABLE QJsonArray getServerConfigs() const;
@@ -95,7 +93,6 @@ public:
 
 signals:
     void enabledChanged();
-    void clientsRunningChanged();
     void serverConfigsChanged();
     void diagnosticsReceived(const QString& uri, const QJsonArray& diagnostics);
     void diagnosticsChanged();

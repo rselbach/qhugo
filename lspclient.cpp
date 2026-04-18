@@ -175,13 +175,6 @@ void LspClient::setEnabled(bool enabled)
     }
 }
 
-bool LspClient::areClientsRunning() const
-{
-    // Check if any clients are actually running
-    // For now, we check if LSP is enabled as a proxy
-    return isEnabled();
-}
-
 QJsonArray LspClient::getServerConfigs() const
 {
     char* serversJson = LSPGetServers();
@@ -229,15 +222,12 @@ void LspClient::setServerEnabled(const QString& name, bool enabled)
 
 void LspClient::startClients()
 {
-    if (LSPStartClients() == 1) {
-        emit clientsRunningChanged();
-    }
+    LSPStartClients();
 }
 
 void LspClient::stopClients()
 {
     LSPStopClients();
-    emit clientsRunningChanged();
 }
 
 QJsonArray LspClient::getCurrentDiagnostics() const
