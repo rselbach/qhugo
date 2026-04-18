@@ -148,11 +148,10 @@ function navigateTo(dir) {
             configLoaded = true
         }
         onRejected: {
-            // If user cancels, use documents location as fallback
-            var fallbackDir = FileController.getDocumentsLocation()
-            FileController.addSiteAndSetCurrent(fallbackDir)
-            setHugoRoot(fallbackDir)
-            configLoaded = true
+            // Nothing selected means "I don't want to pick right now". Exit
+            // instead of silently committing ~/Documents as the Hugo root
+            // and persisting that decision to config.
+            Qt.quit()
         }
     }
 
