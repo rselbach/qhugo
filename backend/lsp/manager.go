@@ -138,7 +138,7 @@ func (m *Manager) SaveConfig() error {
 		return err
 	}
 
-	return os.WriteFile(m.configPath, data, 0644)
+	return os.WriteFile(m.configPath, data, 0600)
 }
 
 // IsEnabled returns whether LSP is enabled
