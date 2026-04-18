@@ -1,6 +1,7 @@
 #ifndef FILECONTROLLER_H
 #define FILECONTROLLER_H
 
+#include <QFileSystemWatcher>
 #include <QObject>
 #include <QStringList>
 
@@ -12,6 +13,7 @@ public:
     ~FileController();
 
     Q_INVOKABLE QStringList scanDirectory(const QString &path);
+    Q_INVOKABLE void invalidateScanCache();
     Q_INVOKABLE QString readFile(const QString &path);
     Q_INVOKABLE bool saveFile(const QString &path, const QString &content);
     Q_INVOKABLE QString getParentPath(const QString &path);
@@ -30,6 +32,11 @@ public:
 
     // Standard Paths
     Q_INVOKABLE QString getDocumentsLocation();
+
+private:
+    QString m_cachedScanPath;
+    QStringList m_cachedScanResult;
+    QFileSystemWatcher m_scanWatcher;
 };
 
 #endif // FILECONTROLLER_H

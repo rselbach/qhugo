@@ -9,6 +9,12 @@
 
 FileController::FileController(QObject *parent) : QObject(parent) {
     InitBackend(); // Initialize Go runtime
+
+    // Invalidate the scan cache whenever the root directory changes.
+    // Per-subdir watching would be more precise but blows past the
+    // per-process inotify watch limit on large trees.
+    connect(&m_scanWatcher, &QFileSystemWatcher::directoryChanged,
+            this, &FileController::invalidateScanCache);
 }
 
 FileController::~FileController() {
@@ -21,6 +27,10 @@ QStringList FileController::scanDirectory(const QString &path) {
         localPath = QUrl(path).toLocalFile();
     }
 
+    if (localPath == m_cachedScanPath && !m_cachedScanResult.isEmpty()) {
+        return m_cachedScanResult;
+    }
+
     QStringList fileList;
     QDir dir(localPath);
     if (!dir.exists()) {
@@ -28,13 +38,13 @@ QStringList FileController::scanDirectory(const QString &path) {
     }
 
     QDirIterator it(localPath, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-    
+
     while (it.hasNext()) {
         QString filePath = it.next();
 
         // Skip heavy folders and build artifacts
-        if (filePath.contains("/.git/") || 
-            filePath.contains("/node_modules/") || 
+        if (filePath.contains("/.git/") ||
+            filePath.contains("/node_modules/") ||
             filePath.contains("/public/") ||
             filePath.contains("/resources/")) {
             continue;
@@ -46,13 +56,28 @@ QStringList FileController::scanDirectory(const QString &path) {
         }
 
         fileList.append(filePath);
-        
+
         if (fileList.size() >= 20000) {
             break;
         }
     }
-    
+
+    m_cachedScanPath = localPath;
+    m_cachedScanResult = fileList;
+
+    if (!m_scanWatcher.directories().isEmpty()) {
+        m_scanWatcher.removePaths(m_scanWatcher.directories());
+    }
+    if (!localPath.isEmpty()) {
+        m_scanWatcher.addPath(localPath);
+    }
+
     return fileList;
+}
+
+void FileController::invalidateScanCache() {
+    m_cachedScanPath.clear();
+    m_cachedScanResult.clear();
 }
 
 QString FileController::getParentPath(const QString &path) {
