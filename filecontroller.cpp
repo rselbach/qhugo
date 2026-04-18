@@ -4,6 +4,9 @@
 #include <QUrl>
 #include <QDebug>
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonValue>
 #include <QRegularExpression>
 #include <QStandardPaths>
 
@@ -214,28 +217,16 @@ QString FileController::loadConfigCurrent() {
 
 QStringList FileController::loadConfigSites() {
     char* result = LoadConfigSites();
-    QString qResult = QString::fromUtf8(result);
+    QByteArray data(result);
     FreeString(result);
 
     QStringList sites;
-    if (!qResult.isEmpty()) {
-        // Parse JSON array
-        QString trimmed = qResult.trimmed();
-        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-            trimmed = trimmed.mid(1, trimmed.length() - 2);
-            // Split by commas, handling quoted strings
-            QRegularExpression re("\\s*,\\s*");
-            QStringList parts = trimmed.split(re);
-            for (QString part : parts) {
-                part = part.trimmed();
-                // Remove quotes
-                if ((part.startsWith("\"") && part.endsWith("\"")) ||
-                    (part.startsWith("'") && part.endsWith("'"))) {
-                    part = part.mid(1, part.length() - 2);
-                }
-                if (!part.isEmpty()) {
-                    sites.append(part);
-                }
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (doc.isArray()) {
+        for (const QJsonValue &val : doc.array()) {
+            QString s = val.toString();
+            if (!s.isEmpty()) {
+                sites.append(s);
             }
         }
     }
