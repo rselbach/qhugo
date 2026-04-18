@@ -6,7 +6,7 @@ import Qt.labs.folderlistmodel
 Item {
     id: root
     property string currentDirectory
-    property string rootDirectory  // Hugo root - can't go above this
+    property string rootDirectory // Hugo root - can't go above this
 
     signal fileSelected(string path)
     signal directorySelected(string path)
@@ -14,11 +14,15 @@ Item {
 
     // Check if we're at the root directory
     readonly property bool atRoot: currentDirectory === rootDirectory ||
-                                    currentDirectory === "" ||
-                                    rootDirectory === ""
+        currentDirectory === "" ||
+        rootDirectory === ""
 
-    ColumnLayout {
+    Rectangle {
         anchors.fill: parent
+        color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#1e1e1e" : "#ffffff"
+
+        ColumnLayout {
+            anchors.fill: parent
         spacing: 0
 
         Rectangle {
@@ -81,6 +85,7 @@ Item {
                         root.fileSelected(filePath)
                     }
                 }
+            }
             }
         }
     }

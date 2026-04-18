@@ -166,11 +166,15 @@ Item {
             }
         }
 
-        StackLayout {
-            id: stackLayout
-            currentIndex: tabBar.currentIndex
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            color: Qt.application.styleHints.colorScheme === Qt.Dark ? "#1e1e1e" : "#ffffff"
+
+            StackLayout {
+                id: stackLayout
+                anchors.fill: parent
+                currentIndex: tabBar.currentIndex
 
             Repeater {
                 model: tabModel
@@ -493,6 +497,7 @@ Item {
                             }
                         }
                     }
+                }
                 }
             }
         }
