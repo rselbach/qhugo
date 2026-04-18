@@ -189,12 +189,48 @@ func ReadFileContent(path *C.char) *C.char {
 
 //export SaveFileContent
 func SaveFileContent(path *C.char, content *C.char) int {
-	err := os.WriteFile(C.GoString(path), []byte(C.GoString(content)), 0644)
-	if err != nil {
+	if err := atomicWriteFile(C.GoString(path), []byte(C.GoString(content)), 0644); err != nil {
 		log.Println(err)
 		return 0
 	}
 	return 1
+}
+
+// atomicWriteFile writes data to a sibling temp file and renames it into
+// place, so a crash mid-save can't truncate the user's post.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".qhugo-save-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { os.Remove(tmpName) }
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
 }
 
 //export FreeString
