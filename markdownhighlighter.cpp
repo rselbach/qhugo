@@ -322,9 +322,11 @@ void MarkdownHighlighter::highlightSyntax(const QString &text)
                     (i + word.size() == text.length() ||
                      (!text.at(i + word.size()).isLetterOrNumber() &&
                       text.at(i + word.size()) != QLatin1Char('_')))) {
+                    
                     setFormat(i, word.size(), fmt);
                     i += word.size();
-                    break;
+                    
+                    return i;
                 }
             }
         }
@@ -524,16 +526,35 @@ void MarkdownHighlighter::applyDiagnostics(const QString &text, int blockNumber,
         if (startCol < endCol) {
             QColor underlineColor;
             switch (diag.severity) {
-            case 1: underlineColor = QColor("#e06c75"); break;
-            case 2: underlineColor = QColor("#e5c07b"); break;
-            case 3: underlineColor = QColor("#61afef"); break;
-            default: underlineColor = QColor("#98c379"); break;
+            case 1: underlineColor = QColor("#e06c75"); break; // Error
+            case 2: underlineColor = QColor("#e5c07b"); break; // Warning
+            case 3: underlineColor = QColor("#61afef"); break; // Info
+            default: underlineColor = QColor("#98c379"); break; // Hint
             }
 
-            for (int i = startCol; i < endCol; ++i) {
-                QTextCharFormat existingFormat = format(i);
-                existingFormat.setBackground(QColor(underlineColor.red(), underlineColor.green(), underlineColor.blue(), 40));
-                setFormat(i, 1, existingFormat);
+            QColor bgColor(underlineColor.red(), underlineColor.green(), underlineColor.blue(), 40);
+
+            // PERFORMANCE FIX: Batch formatting by chunks instead of character-by-character
+            int currentPos = startCol;
+            while (currentPos < endCol) {
+                QTextCharFormat existingFormat = format(currentPos);
+                
+                // Find how long this exact format continuous for
+                int chunkLength = 1;
+                while (currentPos + chunkLength < endCol && format(currentPos + chunkLength) == existingFormat) {
+                    chunkLength++;
+                }
+
+                // Apply the highlight background
+                existingFormat.setBackground(bgColor);
+                
+                // Instead of standard background, for LSP you might also consider:
+                // existingFormat.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+                // existingFormat.setUnderlineColor(underlineColor);
+
+                setFormat(currentPos, chunkLength, existingFormat);
+                
+                currentPos += chunkLength;
             }
         }
     }
