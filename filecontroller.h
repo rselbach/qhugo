@@ -34,6 +34,10 @@ public:
     // Standard Paths
     Q_INVOKABLE QString getDocumentsLocation();
 
+    // File Operations
+    Q_INVOKABLE void openInFileBrowser(const QString &path);
+    Q_INVOKABLE bool deleteFile(const QString &path);
+
 private:
     QString m_cachedScanPath;
     QStringList m_cachedScanResult;

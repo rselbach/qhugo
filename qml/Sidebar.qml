@@ -88,40 +88,98 @@ Item {
                     }
                 }
 
-                delegate: ItemDelegate {
-                    width: ListView.view.width
-                    text: fileName
-                    icon.name: {
-                        if (fileIsDir) return "folder"
-                        var ext = fileName.toLowerCase()
-                        if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") ||
-                            ext.endsWith(".png") || ext.endsWith(".gif") ||
-                            ext.endsWith(".webp") || ext.endsWith(".svg") ||
-                            ext.endsWith(".bmp") || ext.endsWith(".tiff")) {
-                            return "image-x-generic"
-                        }
-                        return "text-x-markdown"
+            delegate: ItemDelegate {
+                id: fileDelegate
+                width: ListView.view.width
+                text: fileName
+                icon.name: {
+                    if (fileIsDir) return "folder"
+                    var ext = fileName.toLowerCase()
+                    if (ext.endsWith(".jpg") || ext.endsWith(".jpeg") ||
+                        ext.endsWith(".png") || ext.endsWith(".gif") ||
+                        ext.endsWith(".webp") || ext.endsWith(".svg") ||
+                        ext.endsWith(".bmp") || ext.endsWith(".tiff")) {
+                        return "image-x-generic"
                     }
+                    return "text-x-markdown"
+                }
 
-                    readonly property bool isImage: {
-                        var ext = fileName.toLowerCase()
-                        return ext.endsWith(".jpg") || ext.endsWith(".jpeg") ||
-                               ext.endsWith(".png") || ext.endsWith(".gif") ||
-                               ext.endsWith(".webp") || ext.endsWith(".svg") ||
-                               ext.endsWith(".bmp") || ext.endsWith(".tiff")
-                    }
+                readonly property bool isImage: {
+                    var ext = fileName.toLowerCase()
+                    return ext.endsWith(".jpg") || ext.endsWith(".jpeg") ||
+                           ext.endsWith(".png") || ext.endsWith(".gif") ||
+                           ext.endsWith(".webp") || ext.endsWith(".svg") ||
+                           ext.endsWith(".bmp") || ext.endsWith(".tiff")
+                }
 
-                    onClicked: {
-                        if (fileIsDir) {
-                            root.directorySelected(filePath)
-                        } else if (isImage) {
-                            root.imageSelected(filePath)
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    propagateComposedEvents: true
+
+                    onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            fileContextMenu.filePath = filePath
+                            fileContextMenu.fileName = fileName
+                            fileContextMenu.isDir = fileIsDir
+                            fileContextMenu.popup()
                         } else {
-                            root.fileSelected(filePath)
+                            if (fileIsDir) {
+                                root.directorySelected(filePath)
+                            } else if (isImage) {
+                                root.imageSelected(filePath)
+                            } else {
+                                root.fileSelected(filePath)
+                            }
                         }
                     }
                 }
             }
         }
+
+        Menu {
+            id: fileContextMenu
+            property string filePath: ""
+            property string fileName: ""
+            property bool isDir: false
+
+            MenuItem {
+                text: Qt.platform.os === "osx" ? qsTr("Open in Finder") : qsTr("Open Directory")
+                onTriggered: FileController.openInFileBrowser(fileContextMenu.filePath)
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: qsTr("Delete")
+                onTriggered: {
+                    deleteDialog.filePath = fileContextMenu.filePath
+                    deleteDialog.fileName = fileContextMenu.fileName
+                    deleteDialog.isDir = fileContextMenu.isDir
+                    deleteDialog.open()
+                }
+            }
+        }
+
+        Dialog {
+            id: deleteDialog
+            title: qsTr("Confirm Delete")
+            modal: true
+            anchors.centerIn: parent
+            standardButtons: Dialog.Ok | Dialog.Cancel
+
+            property string filePath: ""
+            property string fileName: ""
+            property bool isDir: false
+
+            Label {
+                text: qsTr("Delete %1?").arg(deleteDialog.isDir ? qsTr("folder") + " " + deleteDialog.fileName : deleteDialog.fileName)
+            }
+
+            onAccepted: {
+                FileController.deleteFile(deleteDialog.filePath)
+                folderModel.folder = ""
+                folderModel.folder = "file://" + root.currentDirectory
+            }
+        }
     }
+}
 }

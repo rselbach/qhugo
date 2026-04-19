@@ -9,6 +9,9 @@
 #include <QJsonValue>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QDesktopServices>
+#include <QFile>
+#include <QDir>
 
 FileController::FileController(QObject *parent) : QObject(parent) {
     InitBackend(); // Initialize Go runtime
@@ -252,4 +255,27 @@ bool FileController::isBundleDirectory(const QString &dirPath) {
     }
     QDir dir(localPath);
     return dir.exists("index.md");
+}
+
+void FileController::openInFileBrowser(const QString &path) {
+    QString localPath = path;
+    if (path.startsWith("file://")) {
+        localPath = QUrl(path).toLocalFile();
+    }
+    QFileInfo info(localPath);
+    QString dirPath = info.isDir() ? localPath : info.absolutePath();
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dirPath));
+}
+
+bool FileController::deleteFile(const QString &path) {
+    QString localPath = path;
+    if (path.startsWith("file://")) {
+        localPath = QUrl(path).toLocalFile();
+    }
+    QFileInfo info(localPath);
+    if (info.isDir()) {
+        QDir dir(localPath);
+        return dir.removeRecursively();
+    }
+    return QFile::remove(localPath);
 }

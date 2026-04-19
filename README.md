@@ -40,19 +40,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 https://doc.qt.io/qt-6/qtwidgets-richtext-syntaxhighlighter-example.html
 
-right click on file browser, open finder
-right click on file browser add delete file
-
-After an image is drag and dropped emit a text change event so the webview can be reloaded
-
 Full git support
 
-right click in editor add copy paste
 
 
 ## Doc
 
-mention using shortcodes/img.html
+using shortcodes/img.html
 
 ```
 {{/* Usage: {{< img src="hero.jpg" alt="My caption" >}} */}}
